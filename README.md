@@ -104,4 +104,165 @@ const firebaseConfig = {
     apiKey: "AIzaSyBo8G3ZcWk4EepN0cHdVBtXc7tGOfcw-yg",
     authDomain: "inscricaosinuca.firebaseapp.com",
     projectId: "inscricaosinuca",
-    storageBucket: "i
+    storageBucket: "inscricaosinuca.firebasestorage.app",
+    messagingSenderId: "338241576305",
+    appId: "1:338241576305:web:288b6124384c6be4f76ad0"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+let allParticipants = [];
+let currentDraw = [];
+
+/* ADMIN */
+window.toggleAdmin = () => {
+    if (!localStorage.getItem("admin")) {
+        const pass = prompt("Senha do administrador:");
+        if (pass !== "bolao2025") return;
+        localStorage.setItem("admin", "ok");
+    }
+    document.getElementById("adminPanel").classList.toggle("hidden");
+};
+
+/* IMPORTAÇÃO EXCEL */
+document.getElementById("fileInput").addEventListener("change", async e => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+
+    reader.onload = async evt => {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+
+        const snap = await getDocs(collection(db, "participants"));
+        const batch = writeBatch(db);
+        snap.forEach(d => batch.delete(d.ref));
+
+        let count = 0;
+
+        rows.forEach((row, index) => {
+            if (index === 0) return;
+
+            const name = String(row[0] || "").trim();
+            if (!name) return;
+
+            const extract = txt =>
+                String(txt || "").match(/\d+/g)
+                    ?.map(n => parseInt(n))
+                    .filter(n => n >= 1 && n <= 60) || [];
+
+            const nums1 = extract(row[1]);
+            const nums2 = extract(row[2]);
+
+            let bets = [];
+            if (nums1.length === 6) bets.push(nums1.sort((a,b)=>a-b));
+            if (nums2.length === 6) bets.push(nums2.sort((a,b)=>a-b));
+
+            if (bets.length) {
+                batch.set(doc(collection(db, "participants")), { name, bets });
+                count++;
+            }
+        });
+
+        await batch.commit();
+        alert(`✅ ${count} participantes importados`);
+        location.reload();
+    };
+
+    reader.readAsArrayBuffer(file);
+});
+
+/* RESULTADO */
+window.saveDrawResult = async () => {
+    const nums = document.getElementById("drawInput").value.match(/\d+/g);
+    if (!nums || nums.length < 6) return alert("Informe 6 números");
+    const draw = nums.map(n => parseInt(n)).slice(0,6).sort((a,b)=>a-b);
+    await setDoc(doc(db,"settings","draw"), { numbers: draw });
+};
+
+onSnapshot(doc(db,"settings","draw"), s => {
+    currentDraw = s.exists() ? s.data().numbers : [];
+    document.getElementById("drawInput").value = currentDraw.join(" ");
+    render();
+});
+
+onSnapshot(collection(db,"participants"), s => {
+    allParticipants = s.docs.map(d => d.data());
+    document.getElementById("loading").classList.add("hidden");
+    render();
+});
+
+/* RENDER */
+function render() {
+    const container = document.getElementById("betsList");
+    container.innerHTML = "";
+
+    const searchText = document.getElementById("searchInput").value.toLowerCase();
+    const searchNums = searchText.match(/\d+/g)?.map(n=>parseInt(n)) || [];
+
+    let stats = { sena:0, quina:0, quadra:0 };
+
+    allParticipants.forEach(p => {
+        p.bets.forEach(b => {
+            if (!currentDraw.length) return;
+            const hits = b.filter(n=>currentDraw.includes(n)).length;
+            if (hits===6) stats.sena++;
+            else if (hits===5) stats.quina++;
+            else if (hits===4) stats.quadra++;
+        });
+    });
+
+    document.getElementById("countSena").innerText = stats.sena;
+    document.getElementById("countQuina").innerText = stats.quina;
+    document.getElementById("countQuadra").innerText = stats.quadra;
+
+    allParticipants.forEach(p => {
+        const match =
+            !searchText ||
+            p.name.toLowerCase().includes(searchText) ||
+            p.bets.some(b => searchNums.every(n => b.includes(n)));
+
+        if (!match) return;
+
+        const card = document.createElement("div");
+        card.className = "bg-white p-4 rounded-lg shadow border";
+
+        let html = `<h3 class="font-bold mb-3">${p.name}</h3>`;
+
+        p.bets.forEach((b, i) => {
+            const hits = currentDraw.length
+                ? b.filter(n=>currentDraw.includes(n)).length
+                : 0;
+
+            const bg =
+                hits===6?'sena-bg':
+                hits===5?'quina-bg':
+                hits===4?'quadra-bg':
+                'bg-gray-50';
+
+            html += `
+            <div class="p-2 mb-2 rounded ${bg}">
+                <div class="text-xs mb-1">
+                    Jogo ${i+1} • ${currentDraw.length ? hits + ' acertos' : 'aguardando sorteio'}
+                </div>
+                <div class="flex flex-wrap gap-1 justify-center">
+                    ${b.map(n=>`
+                        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs border
+                        ${currentDraw.includes(n)?'hit-number':'bg-white'}">
+                        ${String(n).padStart(2,'0')}
+                        </span>`).join("")}
+                </div>
+            </div>`;
+        });
+
+        card.innerHTML = html;
+        container.appendChild(card);
+    });
+}
+
+document.getElementById("searchInput").addEventListener("input", render);
+</script>
+
+</body>
+</html>
