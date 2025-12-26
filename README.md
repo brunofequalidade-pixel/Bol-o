@@ -287,7 +287,10 @@
                 const matchesSearch = p.name.toLowerCase().includes(search) || 
                                     p.bets.some(b => {
                                         const nums = b.numbers || b;
-                                        return nums.some(n => n.toString() == search);
+                                        return nums.some(n => {
+                                            const numStr = n.toString().padStart(2, '0');
+                                            return numStr.includes(search) || n.toString().includes(search);
+                                        });
                                     });
                 if (search && !matchesSearch) return;
 
