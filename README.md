@@ -134,9 +134,20 @@
                         console.log(`${nome} - Jogos válidos:`, validBets.length, validBets);
 
                         if (validBets.length > 0) {
-                            batch.set(doc(collection(db, "participants")), { name: nome, bets: validBets });
-                            count++;
-                            debugInfo.push(`✓ ${nome}: ${validBets.length} jogo(s)`);
+                            try {
+                                // Cria um documento com ID único
+                                const docRef = doc(collection(db, "participants"));
+                                batch.set(docRef, { 
+                                    name: nome, 
+                                    bets: validBets
+                                });
+                                count++;
+                                debugInfo.push(`✓ ${nome}: ${validBets.length} jogo(s)`);
+                            } catch (batchError) {
+                                console.error(`Erro ao adicionar ${nome}:`, batchError);
+                                debugInfo.push(`✗ ${nome}: erro ao adicionar - ${batchError.message}`);
+                                skipped++;
+                            }
                         } else {
                             debugInfo.push(`✗ ${nome}: nenhum jogo válido (${todosNumeros.length} números)`);
                             skipped++;
@@ -149,9 +160,13 @@
                     console.log(`Ignorados: ${skipped}`);
                     console.log('Detalhes:', debugInfo);
 
-                    await batch.commit();
-                    alert(`✅ ${count} participantes carregados com sucesso!\n${skipped} linhas ignoradas.\n\nVeja o console (F12) para detalhes.`);
-                    location.reload();
+                    if (count > 0) {
+                        await batch.commit();
+                        alert(`✅ ${count} participantes carregados com sucesso!\n${skipped} linhas ignoradas.\n\nVeja o console (F12) para detalhes.`);
+                        location.reload();
+                    } else {
+                        alert(`⚠️ Nenhum participante foi importado.\n${skipped} linhas ignoradas.\n\nVerifique o console (F12) para detalhes.`);
+                    }
                 } catch (err) { 
                     console.error('Erro na importação:', err);
                     alert("Erro: " + err.message); 
