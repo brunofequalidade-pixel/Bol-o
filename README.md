@@ -1,4 +1,3 @@
-
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -11,6 +10,7 @@
         .sena-bg { background-color: #dcfce7; border: 2px solid #16a34a; }
         .quina-bg { background-color: #fef9c3; border: 2px solid #ca8a04; }
         .quadra-bg { background-color: #dbeafe; border: 2px solid #2563eb; }
+        .duplicate-bg { background-color: #fee2e2; border: 2px solid #ef4444; } /* Novo estilo para duplicados */
         .hit-number { background-color: #16a34a; color: white; font-weight: bold; border-color: #16a34a; }
     </style>
 </head>
@@ -24,7 +24,6 @@
         </div>
     </nav>
 
-    <!-- Modal de Senha -->
     <div id="passwordModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
             <h3 class="text-lg font-bold mb-4 text-gray-800">Acesso Administrativo</h3>
@@ -38,7 +37,8 @@
     </div>
 
     <div class="container mx-auto mt-6 px-4">
-        <div class="bg-white p-4 rounded-lg shadow-md grid grid-cols-3 gap-2 text-center font-bold">
+        <div class="bg-white p-4 rounded-lg shadow-md grid grid-cols-2 md:grid-cols-4 gap-2 text-center font-bold">
+            <div class="bg-gray-100 p-2 rounded border border-gray-400 text-gray-700"><div class="text-[10px] uppercase">Participantes</div><span id="countTotal">0</span></div>
             <div class="bg-green-50 p-2 rounded border border-green-500 text-green-700"><div class="text-[10px] uppercase">Sena</div><span id="countSena">0</span></div>
             <div class="bg-yellow-50 p-2 rounded border border-yellow-500 text-yellow-700"><div class="text-[10px] uppercase">Quina</div><span id="countQuina">0</span></div>
             <div class="bg-blue-50 p-2 rounded border border-blue-500 text-blue-700"><div class="text-[10px] uppercase">Quadra</div><span id="countQuadra">0</span></div>
@@ -227,16 +227,27 @@
         function render() {
             const container = document.getElementById('betsList');
             container.innerHTML = '';
+            
+            // Atualiza total de participantes na tela
+            document.getElementById('countTotal').innerText = allParticipants.length;
+
             const rawSearch = document.getElementById('searchInput').value.toLowerCase();
             let stats = { sena: 0, quina: 0, quadra: 0 };
             let foundCount = 0;
 
-            // Lógica de Filtro Avançada
-            // 1. Extrai números da busca (ex: "1020" vira ["10", "20"], "10 20" vira ["10", "20"])
-            // A regex \d{1,2} captura grupos de 1 ou 2 dígitos.
+            // 1. Mapeamento de Jogos Duplicados
+            const betCounts = {};
+            allParticipants.forEach(p => {
+                p.bets.forEach(b => {
+                    const nums = b.numbers || b;
+                    // Cria uma chave única para o jogo (ex: "1,10,20,30,40,50")
+                    const key = nums.slice().sort((a,b)=>a-b).join(',');
+                    betCounts[key] = (betCounts[key] || 0) + 1;
+                });
+            });
+
             const searchNums = rawSearch.match(/\d{1,2}/g) || [];
             
-            // Ordenação: quem tem mais acertos primeiro
             const sortedList = [...allParticipants].sort((a, b) => {
                 const maxA = Math.max(...a.bets.map(bet => {
                     const nums = bet.numbers || bet;
@@ -250,21 +261,16 @@
             });
 
             sortedList.forEach(p => {
-                // Filtro por Nome (texto simples)
                 const matchesName = p.name.toLowerCase().includes(rawSearch);
                 
-                // Filtro por Números (busca inteligente)
-                // Verifica se ALGUM jogo do participante contém TODOS os números pesquisados
                 const matchesBets = searchNums.length > 0 && p.bets.some(b => {
                     const nums = b.numbers || b;
-                    // Verifica se todos os números buscados estão neste jogo
                     return searchNums.every(searchNum => {
                         const sInt = parseInt(searchNum);
                         return nums.includes(sInt);
                     });
                 });
 
-                // Se houver busca e não der match nem no nome nem nos números, ignora
                 if (rawSearch && !matchesName && !matchesBets) return;
 
                 foundCount++;
@@ -275,12 +281,27 @@
                 let betsHtml = p.bets.map((bet, idx) => {
                     const nums = bet.numbers || bet;
                     const hits = nums.filter(n => currentDraw.includes(n)).length;
+                    
+                    // Verifica duplicidade usando a chave gerada anteriormente
+                    const key = nums.slice().sort((a,b)=>a-b).join(',');
+                    const isDuplicate = betCounts[key] > 1;
+
                     if (hits === 6) stats.sena++; else if (hits === 5) stats.quina++; else if (hits === 4) stats.quadra++;
                     
-                    let bg = hits === 6 ? 'sena-bg' : hits === 5 ? 'quina-bg' : hits === 4 ? 'quadra-bg' : 'bg-gray-50';
+                    // Lógica de cores: Prioriza vitória, senão verifica duplicidade
+                    let bg = hits === 6 ? 'sena-bg' : 
+                             hits === 5 ? 'quina-bg' : 
+                             hits === 4 ? 'quadra-bg' : 
+                             isDuplicate ? 'duplicate-bg' : 'bg-gray-50';
+
+                    let duplicateIcon = isDuplicate ? '<span class="text-red-600 ml-2 text-[10px]"><i class="fas fa-exclamation-circle"></i> Duplicado</span>' : '';
+
                     return `
                         <div class="p-2 rounded mb-2 ${bg} transition-colors">
-                            <div class="text-[10px] text-gray-400 mb-1 font-bold uppercase">Jogo ${idx+1} • ${hits} acertos</div>
+                            <div class="text-[10px] text-gray-400 mb-1 font-bold uppercase flex justify-between">
+                                <span>Jogo ${idx+1} • ${hits} acertos</span>
+                                ${duplicateIcon}
+                            </div>
                             <div class="flex flex-wrap gap-1.5 justify-center">
                                 ${nums.map(n => `<span class="w-7 h-7 flex items-center justify-center rounded-full text-xs border ${currentDraw.includes(n) ? 'hit-number' : 'bg-white border-gray-200'}">${n.toString().padStart(2,'0')}</span>`).join('')}
                             </div>
